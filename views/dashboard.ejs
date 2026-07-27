@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the Score - Games</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">Guess the Score</a>
+      <div class="nav-links">
+        <a href="/" class="<%= path === '/' ? 'active' : '' %>">Games</a>
+        <a href="/rankings" class="<%= path === '/rankings' ? 'active' : '' %>">Rankings</a>
+        <% if (user.role === 'admin') { %>
+          <a href="/admin" class="<%= path.startsWith('/admin') ? 'active' : '' %>">Admin</a>
+        <% } %>
+        <span class="username"><%= user.username %></span>
+        <a href="/logout" class="logout-link">Logout</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <section>
+      <h2>Upcoming Games</h2>
+      <% if (upcoming.length === 0) { %>
+        <div class="empty">No upcoming games. Check back later!</div>
+      <% } %>
+      <% upcoming.forEach(game => { %>
+        <div class="game-card">
+          <div class="game-header">
+            <span class="phase-badge phase-<%= game.phase %>">
+              <%= game.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) %>
+            </span>
+            <span class="start-time"><%= new Date(game.start_time).toLocaleString() %></span>
+          </div>
+          <div class="game-teams">
+            <span class="team"><%= game.home_team %></span>
+            <span class="vs">vs</span>
+            <span class="team"><%= game.away_team %></span>
+          </div>
+          <form method="POST" action="/predict/<%= game.id %>" class="predict-form">
+            <input type="number" name="home_score" min="0" max="50" required
+              value="<%= game.myPrediction ? game.myPrediction.home_score : '' %>"
+              placeholder="0">
+            <span style="color:var(--text-muted);font-weight:600;">-</span>
+            <input type="number" name="away_score" min="0" max="50" required
+              value="<%= game.myPrediction ? game.myPrediction.away_score : '' %>"
+              placeholder="0">
+            <button type="submit"><%= game.myPrediction ? 'Update' : 'Submit' %> Prediction</button>
+          </form>
+          <% if (game.myPrediction) { %>
+            <div class="my-prediction">
+              <strong><%= game.myPrediction.home_score %> - <%= game.myPrediction.away_score %></strong>
+              <span style="color:var(--text-muted);font-size:0.85rem;">(click update to change)</span>
+            </div>
+          <% } %>
+          <div class="points-info">
+            <%= phasePoints[game.phase] || 5 %> pts for exact score &middot;
+            <%= Math.floor((phasePoints[game.phase] || 5) / 2) %> pts for correct outcome
+          </div>
+        </div>
+      <% }) %>
+    </section>
+
+    <section>
+      <h2>Started / Finished Games</h2>
+      <% if (started.length === 0) { %>
+        <div class="empty">No games have started yet.</div>
+      <% } %>
+      <% started.forEach(game => { %>
+        <div class="game-card <%= game.status === 'finished' ? 'finished' : 'live' %>">
+          <div class="game-header">
+            <span class="phase-badge phase-<%= game.phase %>">
+              <%= game.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) %>
+            </span>
+            <% if (game.status === 'finished') { %>
+              <span class="result-badge"><%= game.home_score %> - <%= game.away_score %></span>
+            <% } else { %>
+              <span class="live-indicator">&#9679; Live</span>
+            <% } %>
+          </div>
+          <div class="game-teams">
+            <span class="team <%= game.status === 'finished' && game.home_score > game.away_score ? 'winner' : '' %>">
+              <%= game.home_team %>
+            </span>
+            <span class="vs">vs</span>
+            <span class="team <%= game.status === 'finished' && game.away_score > game.home_score ? 'winner' : '' %>">
+              <%= game.away_team %>
+            </span>
+          </div>
+          <% if (game.myPrediction) { %>
+            <div class="my-prediction">
+              Your prediction: <strong><%= game.myPrediction.home_score %> - <%= game.myPrediction.away_score %></strong>
+              <% if (game.myPrediction.points !== null) { %>
+                <span class="points-earned">+<%= game.myPrediction.points %></span>
+              <% } %>
+            </div>
+          <% } %>
+          <div class="all-predictions">
+            <table class="predictions-table">
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>Prediction</th>
+                  <% if (game.status === 'finished') { %><th>Pts</th><% } %>
+                </tr>
+              </thead>
+              <tbody>
+                <% game.allPredictions.forEach(p => { %>
+                  <tr>
+                    <td><%= p.username %></td>
+                    <td><%= p.home_score %> - <%= p.away_score %></td>
+                    <% if (game.status === 'finished') { %>
+                      <td><strong style="color:<%= p.points > 0 ? 'var(--success)' : 'var(--text-muted)' %>">
+                        <%= p.points !== null ? p.points : '-' %>
+                      </strong></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+                <% if (game.allPredictions.length === 0) { %>
+                  <tr><td colspan="<%= game.status === 'finished' ? 3 : 2 %>" style="text-align:center;color:var(--text-muted);">No predictions submitted</td></tr>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      <% }) %>
+    </section>
+  </div>
+</body>
+</html>

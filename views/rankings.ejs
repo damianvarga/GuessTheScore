@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the Score - Rankings</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">Guess the Score</a>
+      <div class="nav-links">
+        <a href="/">Games</a>
+        <a href="/rankings" class="active">Rankings</a>
+        <% if (user.role === 'admin') { %>
+          <a href="/admin">Admin</a>
+        <% } %>
+        <span class="username"><%= user.username %></span>
+        <a href="/logout" class="logout-link">Logout</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2>Rankings</h2>
+    <% if (rankings.length === 0) { %>
+      <div class="empty">No players yet.</div>
+    <% } else { %>
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Total Points</th>
+            <th>Scored / Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% rankings.forEach((player, index) => { %>
+            <tr class="rank-<%= index + 1 %>">
+              <td class="rank-num"><%= index + 1 %></td>
+              <td class="rank-player"><%= player.username %></td>
+              <td class="rank-points"><%= player.total_points %></td>
+              <td class="rank-stats"><%= player.predictions_scored %> / <%= player.total_predictions %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+</body>
+</html>

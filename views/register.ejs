@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the Score - Register</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1>Guess the Score</h1>
+      <p class="subtitle">Create your account</p>
+      <% if (error) { %><div class="error"><%= error %></div><% } %>
+      <form method="POST" action="/register">
+        <input type="text" name="username" placeholder="Username" required autocomplete="username">
+        <input type="password" name="password" placeholder="Password (min 4 characters)" required autocomplete="new-password">
+        <input type="password" name="confirmPassword" placeholder="Confirm Password" required autocomplete="new-password">
+        <button type="submit">Create Account</button>
+      </form>
+      <p class="auth-link">Already have an account? <a href="/login">Sign In</a></p>
+    </div>
+  </div>
+</body>
+</html>
