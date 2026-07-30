@@ -71,12 +71,14 @@ const ready = initSqlJs().then(SQL => {
     `);
   }
 
-  const admin = one('SELECT * FROM users WHERE username = ?', ['admin']);
-  if (!admin) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    run('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)', ['admin', hash, 'admin', new Date().toISOString()]);
-    save();
-    console.log('Default admin created: admin / admin123');
+  if (process.env.NODE_ENV !== 'production') {
+    const admin = one('SELECT * FROM users WHERE username = ?', ['admin']);
+    if (!admin) {
+      const hash = bcrypt.hashSync('admin123', 10);
+      run('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)', ['admin', hash, 'admin', new Date().toISOString()]);
+      save();
+      console.log('Default admin user created (dev only)');
+    }
   }
 });
 

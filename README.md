@@ -25,13 +25,29 @@ A football match score prediction game built with Node.js, Express, and EJS.
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v16 or newer)
+- [Node.js](https://nodejs.org/) (v18 or newer)
 
-### Install
+### Setup
+
+1. Clone the repo and install dependencies:
 
 ```bash
 npm install
 ```
+
+2. Create a `.env` file from the template:
+
+```bash
+cp .env.example .env
+```
+
+3. Generate a strong random secret for `SESSION_SECRET`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Copy the output and paste it into your `.env` file.
 
 ### Run
 
@@ -47,10 +63,22 @@ For development with auto-restart on file changes:
 npm run dev
 ```
 
-### Default Admin
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SESSION_SECRET` | Yes | — | Secret key for signing session cookies (generate a random hex string) |
+| `PORT` | No | `3000` | Port the server listens on |
+| `NODE_ENV` | No | `development` | Set to `production` for production mode |
+
+### Default Admin (Development Only)
+
+When `NODE_ENV` is **not** set to `production`, a default admin is auto-created:
 
 - Username: `admin`
 - Password: `admin123`
+
+**Do not use these credentials in production.** In production, register a user and manually promote them to admin, or remove the dev seeding logic from `db.js`.
 
 ## Usage
 
