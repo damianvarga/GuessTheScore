@@ -1,12 +1,29 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const csrf = require('csrf');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
+const HTTPS_ENABLED = !!(SSL_CERT_PATH && SSL_KEY_PATH);
+const HTTP_REDIRECT_PORT = HTTPS_ENABLED ? (process.env.HTTP_REDIRECT_PORT || '') : '';
+
+app.disable('x-powered-by');
+app.use(helmet());
+
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', parseInt(process.env.TRUST_PROXY, 10) || 1);
+}
 
 const PHASE_POINTS = {
   'group': 10,
@@ -28,18 +45,61 @@ app.use(session({
   cookie: {
     maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: 'auto',
     sameSite: 'lax'
   }
 }));
+
+const tokens = new csrf();
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many attempts. Please try again later.'
+});
+
+app.use((req, res, next) => {
+  if (!req.session.csrfSecret) {
+    req.session.csrfSecret = tokens.secretSync();
+  }
+  res.locals.csrfToken = tokens.create(req.session.csrfSecret);
+  next();
+});
+
+function verifyCsrf(req, res, next) {
+  const token = req.body._csrf || req.get('X-CSRF-Token');
+  if (!token || !tokens.verify(req.session.csrfSecret, token)) {
+    return res.status(403).send('Invalid CSRF token');
+  }
+  next();
+}
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
   next();
 }
 
-function requireAdmin(req, res, next) {
-  if (!req.session.userId || req.session.role !== 'admin') return res.redirect('/');
+function loadLeague(req, res, next) {
+  const league = db.getLeagueById(req.params.leagueId);
+  if (!league) return res.status(404).send('League not found');
+  res.locals.league = league;
+  req.league = league;
+  next();
+}
+
+function requireLeagueMember(req, res, next) {
+  if (!db.isLeagueMember(req.session.userId, req.params.leagueId)) {
+    return res.redirect('/leagues');
+  }
+  next();
+}
+
+function requireLeagueOwner(req, res, next) {
+  if (!db.isLeagueOwner(req.session.userId, req.params.leagueId)) {
+    return res.status(403).send('Only the league owner can do that');
+  }
   next();
 }
 
@@ -74,7 +134,7 @@ app.get('/login', (req, res) => {
   res.render('login', { error: null });
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', authLimiter, verifyCsrf, (req, res) => {
   const { username, password } = req.body;
   const user = db.getUserByUsername(username);
   if (!user || !bcrypt.compareSync(password, user.password)) {
@@ -82,7 +142,7 @@ app.post('/login', (req, res) => {
   }
   req.session.userId = user.id;
   req.session.role = user.role;
-  res.redirect('/');
+  res.redirect('/leagues');
 });
 
 app.get('/register', (req, res) => {
@@ -90,7 +150,7 @@ app.get('/register', (req, res) => {
   res.render('register', { error: null });
 });
 
-app.post('/register', (req, res) => {
+app.post('/register', authLimiter, verifyCsrf, (req, res) => {
   const { username, password, confirmPassword } = req.body;
   if (!username || !password) {
     return res.render('register', { error: 'All fields are required' });
@@ -98,8 +158,11 @@ app.post('/register', (req, res) => {
   if (password !== confirmPassword) {
     return res.render('register', { error: 'Passwords do not match' });
   }
-  if (password.length < 4) {
-    return res.render('register', { error: 'Password must be at least 4 characters' });
+  if (password.length < 8) {
+    return res.render('register', { error: 'Password must be at least 8 characters' });
+  }
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+    return res.render('register', { error: 'Password must include uppercase, lowercase, and a number' });
   }
 
   const existing = db.getUserByUsername(username);
@@ -112,14 +175,88 @@ app.post('/register', (req, res) => {
   res.redirect('/login');
 });
 
-app.get('/logout', (req, res) => {
+app.post('/logout', verifyCsrf, (req, res) => {
   req.session.destroy();
   res.redirect('/login');
 });
 
 app.get('/', requireAuth, (req, res) => {
+  res.redirect('/leagues');
+});
+
+app.get('/leagues', requireAuth, (req, res) => {
+  const leagues = db.getLeaguesForUser(req.session.userId);
+  res.render('leagues', { leagues, error: null });
+});
+
+app.post('/leagues', requireAuth, verifyCsrf, (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    const leagues = db.getLeaguesForUser(req.session.userId);
+    return res.render('leagues', { leagues, error: 'League name is required' });
+  }
+  const league = db.createLeague(req.session.userId, name.trim());
+  res.redirect(`/leagues/${league.id}`);
+});
+
+app.post('/leagues/join', requireAuth, verifyCsrf, (req, res) => {
+  const { code } = req.body;
+  const leagues = db.getLeaguesForUser(req.session.userId);
+  const league = db.getLeagueByCode(code);
+  if (!league) {
+    return res.render('leagues', { leagues, error: 'League not found. Check the code and try again.' });
+  }
+  if (!db.joinLeague(req.session.userId, league.id)) {
+    return res.render('leagues', { leagues, error: `You are already a member of ${league.name}` });
+  }
+  res.redirect(`/leagues/${league.id}`);
+});
+
+app.get('/leagues/:leagueId', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
+  const members = db.getLeagueMembers(req.params.leagueId);
+  const isOwner = db.isLeagueOwner(req.session.userId, req.params.leagueId);
+  res.render('league', { members, isOwner });
+});
+
+app.post('/leagues/:leagueId/leave', requireAuth, loadLeague, requireLeagueMember, verifyCsrf, (req, res) => {
+  if (db.isLeagueOwner(req.session.userId, req.params.leagueId)) {
+    return res.status(400).send('The owner cannot leave. Delete the league instead.');
+  }
+  db.leaveLeague(req.session.userId, req.params.leagueId);
+  res.redirect('/leagues');
+});
+
+app.post('/leagues/:leagueId/delete', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+  db.deleteLeague(req.params.leagueId);
+  res.redirect('/leagues');
+});
+
+app.get('/leagues/:leagueId/admin', requireAuth, loadLeague, requireLeagueOwner, (req, res) => {
+  const games = db.getLeagueGames(req.params.leagueId).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+  res.render('admin', { games, phasePoints: PHASE_POINTS, error: null });
+});
+
+app.post('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+  const { phase, home_team, away_team, start_time } = req.body;
+
+  const errors = [];
+  if (!phase) errors.push('Phase is required');
+  if (!home_team) errors.push('Home team is required');
+  if (!away_team) errors.push('Away team is required');
+  if (!start_time) errors.push('Start time is required');
+
+  if (errors.length > 0) {
+    const games = db.getLeagueGames(req.params.leagueId).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+    return res.render('admin', { games, phasePoints: PHASE_POINTS, error: errors.join(', ') });
+  }
+
+  db.createGame(req.params.leagueId, phase, home_team, away_team, start_time);
+  res.redirect(`/leagues/${req.params.leagueId}/admin`);
+});
+
+app.get('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
   const now = new Date();
-  const games = db.getGames();
+  const games = db.getLeagueGames(req.params.leagueId);
 
   const upcoming = [];
   const started = [];
@@ -149,12 +286,44 @@ app.get('/', requireAuth, (req, res) => {
   res.render('dashboard', { upcoming, started, phasePoints: PHASE_POINTS });
 });
 
-app.post('/predict/:gameId', requireAuth, (req, res) => {
-  const gameId = req.params.gameId;
+app.post('/leagues/:leagueId/games/:gameId/result', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+  const { gameId } = req.params;
+  const { home_score, away_score } = req.body;
+
+  const home = parseInt(home_score);
+  const away = parseInt(away_score);
+  if (isNaN(home) || isNaN(away) || home < 0 || away < 0 || home > 99 || away > 99) {
+    return res.status(400).send('Invalid scores');
+  }
+
+  const game = db.getGame(gameId);
+  if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
+
+  db.updateGameResult(gameId, home, away);
+
+  const predictions = db.getGamePredictions(gameId);
+  for (const pred of predictions) {
+    const points = calculatePoints(pred.home_score, pred.away_score, home, away, game.phase);
+    db.updatePredictionPoints(pred.id, points);
+  }
+
+  res.redirect(`/leagues/${req.params.leagueId}/admin`);
+});
+
+app.post('/leagues/:leagueId/games/:gameId/delete', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+  const { gameId } = req.params;
+  const game = db.getGame(gameId);
+  if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
+  db.deleteGame(gameId);
+  res.redirect(`/leagues/${req.params.leagueId}/admin`);
+});
+
+app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, requireLeagueMember, verifyCsrf, (req, res) => {
+  const { gameId } = req.params;
   const { home_score, away_score } = req.body;
 
   const game = db.getGame(gameId);
-  if (!game) return res.status(404).send('Game not found');
+  if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
   if (game.status === 'finished') return res.status(400).send('Game already finished');
 
   const gameStart = new Date(game.start_time);
@@ -168,70 +337,45 @@ app.post('/predict/:gameId', requireAuth, (req, res) => {
   }
 
   db.upsertPrediction(gameId, req.session.userId, home, away);
-  res.redirect('/');
+  res.redirect(`/leagues/${req.params.leagueId}/games`);
 });
 
-app.get('/admin', requireAuth, requireAdmin, (req, res) => {
-  const games = db.getGames().sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
-  res.render('admin', { games, phasePoints: PHASE_POINTS, error: null });
-});
-
-app.post('/admin/game', requireAuth, requireAdmin, (req, res) => {
-  const { phase, home_team, away_team, start_time } = req.body;
-
-  const errors = [];
-  if (!phase) errors.push('Phase is required');
-  if (!home_team) errors.push('Home team is required');
-  if (!away_team) errors.push('Away team is required');
-  if (!start_time) errors.push('Start time is required');
-
-  if (errors.length > 0) {
-    const games = db.getGames().sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
-    return res.render('admin', { games, phasePoints: PHASE_POINTS, error: errors.join(', ') });
-  }
-
-  db.createGame(phase, home_team, away_team, start_time);
-  res.redirect('/admin');
-});
-
-app.post('/admin/game/:gameId/result', requireAuth, requireAdmin, (req, res) => {
-  const gameId = req.params.gameId;
-  const { home_score, away_score } = req.body;
-
-  const home = parseInt(home_score);
-  const away = parseInt(away_score);
-  if (isNaN(home) || isNaN(away) || home < 0 || away < 0 || home > 99 || away > 99) {
-    return res.status(400).send('Invalid scores');
-  }
-
-  const game = db.getGame(gameId);
-  if (!game) return res.status(404).send('Game not found');
-
-  db.updateGameResult(gameId, home, away);
-
-  const predictions = db.getGamePredictions(gameId);
-  for (const pred of predictions) {
-    const points = calculatePoints(pred.home_score, pred.away_score, home, away, game.phase);
-    db.updatePredictionPoints(pred.id, points);
-  }
-
-  res.redirect('/admin');
-});
-
-app.post('/admin/game/:gameId/delete', requireAuth, requireAdmin, (req, res) => {
-  db.deleteGame(req.params.gameId);
-  res.redirect('/admin');
-});
-
-app.get('/rankings', requireAuth, (req, res) => {
-  const rankings = db.getRankings();
+app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
+  const rankings = db.getLeagueRankings(req.params.leagueId);
   res.render('rankings', { rankings });
 });
 
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (res.headersSent) return next(err);
+  res.status(500).send('Internal server error');
+});
+
 db.ready.then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-  });
+  if (HTTPS_ENABLED) {
+    const sslOptions = {
+      cert: fs.readFileSync(SSL_CERT_PATH),
+      key: fs.readFileSync(SSL_KEY_PATH)
+    };
+    https.createServer(sslOptions, app).listen(PORT, () => {
+      console.log(`Server running at https://localhost:${PORT}`);
+    });
+    if (HTTP_REDIRECT_PORT) {
+      http.createServer((req, res) => {
+        const publicHost = process.env.PUBLIC_HTTPS_HOST || (req.headers.host || 'localhost').split(':')[0];
+        const httpsPort = process.env.PUBLIC_HTTPS_PORT || String(PORT);
+        const portSuffix = (httpsPort === '443' || httpsPort === '') ? '' : `:${httpsPort}`;
+        res.writeHead(301, { Location: `https://${publicHost}${portSuffix}${req.url}` });
+        res.end();
+      }).listen(parseInt(HTTP_REDIRECT_PORT, 10), () => {
+        console.log(`HTTP to HTTPS redirect running on port ${HTTP_REDIRECT_PORT}`);
+      });
+    }
+  } else {
+    app.listen(PORT, () => {
+      console.log(`Server running at http://localhost:${PORT}`);
+    });
+  }
 }).catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);

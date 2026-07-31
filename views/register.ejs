@@ -13,8 +13,9 @@
       <p class="subtitle">Create your account</p>
       <% if (error) { %><div class="error"><%= error %></div><% } %>
       <form method="POST" action="/register">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <input type="text" name="username" placeholder="Username" required autocomplete="username">
-        <input type="password" name="password" placeholder="Password (min 4 characters)" required autocomplete="new-password">
+        <input type="password" name="password" placeholder="Password (min 8, upper+lower+number)" required autocomplete="new-password">
         <input type="password" name="confirmPassword" placeholder="Confirm Password" required autocomplete="new-password">
         <button type="submit">Create Account</button>
       </form>

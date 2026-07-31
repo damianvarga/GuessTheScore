@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the Score - <%= league.name %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="/leagues" class="nav-brand">Guess the Score</a>
+      <div class="nav-links">
+        <a href="/leagues">My Leagues</a>
+        <a href="/leagues/<%= league.id %>/games">Games</a>
+        <a href="/leagues/<%= league.id %>/rankings">Rankings</a>
+        <% if (league.owner_id === user.id) { %>
+          <a href="/leagues/<%= league.id %>/admin">Manage</a>
+        <% } %>
+        <span class="username"><%= user.username %></span>
+        <form method="POST" action="/logout" class="logout-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit">Logout</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2><%= league.name %></h2>
+
+    <div class="invite-box">
+      <p>Invite friends with this code:</p>
+      <strong class="invite-code"><%= league.code %></strong>
+    </div>
+
+    <div class="league-actions">
+      <a href="/leagues/<%= league.id %>/games" class="btn">View Games</a>
+      <a href="/leagues/<%= league.id %>/rankings" class="btn">Rankings</a>
+      <% if (league.owner_id === user.id) { %>
+        <a href="/leagues/<%= league.id %>/admin" class="btn">Manage Games</a>
+        <form method="POST" action="/leagues/<%= league.id %>/delete" style="display:inline" onsubmit="return confirm('Delete this league and all its games and predictions?')">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn-delete">Delete League</button>
+        </form>
+      <% } else { %>
+        <form method="POST" action="/leagues/<%= league.id %>/leave" style="display:inline" onsubmit="return confirm('Leave this league?')">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn-delete">Leave League</button>
+        </form>
+      <% } %>
+    </div>
+
+    <h2>Members (<%= members.length %>)</h2>
+    <% if (members.length === 0) { %>
+      <div class="empty">No members yet.</div>
+    <% } else { %>
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Joined</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% members.forEach(m => { %>
+            <tr>
+              <td class="rank-player">
+                <%= m.username %>
+                <% if (m.id === league.owner_id) { %><span class="phase-badge">Owner</span><% } %>
+              </td>
+              <td><%= new Date(m.joined_at).toLocaleDateString() %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+</body>
+</html>

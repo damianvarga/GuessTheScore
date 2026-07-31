@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the Score - My Leagues</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="/leagues" class="nav-brand">Guess the Score</a>
+      <div class="nav-links">
+        <a href="/leagues" class="active">My Leagues</a>
+        <span class="username"><%= user.username %></span>
+        <form method="POST" action="/logout" class="logout-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit">Logout</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2>My Leagues</h2>
+    <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+    <% if (leagues.length === 0) { %>
+      <div class="empty">You're not in any leagues yet. Create one below, or join with an invite code!</div>
+    <% } else { %>
+      <div class="league-cards">
+        <% leagues.forEach(league => { %>
+          <a href="/leagues/<%= league.id %>" class="league-card">
+            <div class="league-card-header">
+              <h3><%= league.name %></h3>
+              <span class="phase-badge">Code: <%= league.code %></span>
+            </div>
+            <p class="league-card-meta">
+              <%= league.member_count %> member<%= league.member_count === 1 ? '' : 's' %> &middot;
+              Created by <%= league.owner_name %>
+            </p>
+          </a>
+        <% }) %>
+      </div>
+    <% } %>
+
+    <h2>Create a League</h2>
+    <form class="admin-form" method="POST" action="/leagues">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div>
+        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.3rem;">League Name</label>
+        <input type="text" name="name" placeholder="e.g. Family World Cup Pool" required maxlength="60">
+      </div>
+      <button type="submit">Create League</button>
+    </form>
+
+    <h2>Join a League</h2>
+    <form class="admin-form" method="POST" action="/leagues/join">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div>
+        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.3rem;">Invite Code</label>
+        <input type="text" name="code" placeholder="e.g. AB2C3D" required maxlength="6" style="text-transform:uppercase;">
+      </div>
+      <button type="submit">Join League</button>
+    </form>
+  </div>
+</body>
+</html>

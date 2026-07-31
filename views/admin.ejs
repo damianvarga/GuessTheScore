@@ -9,21 +9,26 @@
 <body>
   <nav class="navbar">
     <div class="nav-inner">
-      <a href="/" class="nav-brand">Guess the Score</a>
+      <a href="/leagues" class="nav-brand">Guess the Score</a>
       <div class="nav-links">
-        <a href="/">Games</a>
-        <a href="/rankings">Rankings</a>
-        <a href="/admin" class="active">Admin</a>
+        <a href="/leagues">My Leagues</a>
+        <a href="/leagues/<%= league.id %>/games">Games</a>
+        <a href="/leagues/<%= league.id %>/rankings">Rankings</a>
+        <a href="/leagues/<%= league.id %>/admin" class="active">Manage</a>
         <span class="username"><%= user.username %></span>
-        <a href="/logout" class="logout-link">Logout</a>
+        <form method="POST" action="/logout" class="logout-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit">Logout</button>
+        </form>
       </div>
     </div>
   </nav>
 
   <div class="container">
-    <h2>Add New Game</h2>
+    <h2>Add New Game - <%= league.name %></h2>
     <% if (error) { %><div class="error"><%= error %></div><% } %>
-    <form class="admin-form" method="POST" action="/admin/game">
+    <form class="admin-form" method="POST" action="/leagues/<%= league.id %>/games">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div>
         <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.3rem;">Phase</label>
         <select name="phase" required>
@@ -75,7 +80,8 @@
               <td><%= new Date(game.start_time).toLocaleString() %></td>
               <td><%= game.status === 'finished' ? 'Finished' : new Date(game.start_time) <= new Date() ? 'Started' : 'Scheduled' %></td>
               <td>
-                <form method="POST" action="/admin/game/<%= game.id %>/result" class="result-form">
+                <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/result" class="result-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                   <input type="number" name="home_score" min="0" max="50" placeholder="H" value="<%= game.home_score !== null ? game.home_score : '' %>" required>
                   <span style="color:var(--text-muted);">-</span>
                   <input type="number" name="away_score" min="0" max="50" placeholder="A" value="<%= game.away_score !== null ? game.away_score : '' %>" required>
@@ -83,7 +89,8 @@
                 </form>
               </td>
               <td>
-                <form method="POST" action="/admin/game/<%= game.id %>/delete" onsubmit="return confirm('Delete this game and all associated predictions?')">
+                <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/delete" onsubmit="return confirm('Delete this game and all associated predictions?')">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                   <button type="submit" class="btn-delete">Delete</button>
                 </form>
               </td>

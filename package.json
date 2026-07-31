@@ -9,13 +9,16 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "csrf": "^3.1.0",
     "dotenv": "^17.4.2",
     "ejs": "^3.1.9",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.6.1",
     "express-session": "^1.17.3",
+    "helmet": "^8.3.0",
     "sql.js": "^1.14.1"
   },
-  "allowScripts": {
-    "better-sqlite3@13.0.1": true
+  "overrides": {
+    "brace-expansion": "^5.0.8"
   }
 }

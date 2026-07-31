@@ -1,9 +1,12 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
 const DB_PATH = path.join(__dirname, 'data.db');
+
+const LEAGUE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 let db;
 
@@ -33,6 +36,17 @@ function exec(sql) {
   db.exec(sql);
 }
 
+function generateUniqueCode() {
+  let code;
+  do {
+    code = '';
+    for (let i = 0; i < 6; i++) {
+      code += LEAGUE_CODE_CHARS[crypto.randomInt(LEAGUE_CODE_CHARS.length)];
+    }
+  } while (one('SELECT id FROM leagues WHERE code = ?', [code]));
+  return code;
+}
+
 const ready = initSqlJs().then(SQL => {
   if (fs.existsSync(DB_PATH)) {
     const buffer = fs.readFileSync(DB_PATH);
@@ -47,8 +61,23 @@ const ready = initSqlJs().then(SQL => {
         role TEXT NOT NULL DEFAULT 'player',
         created_at TEXT NOT NULL
       );
+      CREATE TABLE leagues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        owner_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE league_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        league_id INTEGER NOT NULL REFERENCES leagues(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        joined_at TEXT NOT NULL,
+        UNIQUE(league_id, user_id)
+      );
       CREATE TABLE games (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        league_id INTEGER NOT NULL REFERENCES leagues(id),
         phase TEXT NOT NULL,
         home_team TEXT NOT NULL,
         away_team TEXT NOT NULL,
@@ -71,14 +100,26 @@ const ready = initSqlJs().then(SQL => {
     `);
   }
 
-  if (process.env.NODE_ENV !== 'production') {
-    const admin = one('SELECT * FROM users WHERE username = ?', ['admin']);
-    if (!admin) {
-      const hash = bcrypt.hashSync('admin123', 10);
-      run('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)', ['admin', hash, 'admin', new Date().toISOString()]);
-      save();
-      console.log('Default admin user created (dev only)');
-    }
+  // Migrate existing databases: ensure league tables exist and games has league_id
+  exec(`
+    CREATE TABLE IF NOT EXISTS leagues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL UNIQUE,
+      owner_id INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS league_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL REFERENCES leagues(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      joined_at TEXT NOT NULL,
+      UNIQUE(league_id, user_id)
+    );
+  `);
+  const gameColumns = all('PRAGMA table_info(games)');
+  if (!gameColumns.some(c => c.name === 'league_id')) {
+    exec('ALTER TABLE games ADD COLUMN league_id INTEGER');
   }
 });
 
@@ -103,27 +144,101 @@ const dbInterface = {
     run('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, ?)', [username, password, role || 'player', createdAt]);
     const id = one('SELECT last_insert_rowid() as id').id;
     save();
-    return { id, username, password, role: role || 'player', created_at: createdAt };
+    return { id, username, role: role || 'player', created_at: createdAt };
   },
 
   getAllUsers() {
     return all('SELECT * FROM users');
   },
 
-  getGames() {
-    return all('SELECT * FROM games');
+  createLeague(ownerId, name) {
+    const code = generateUniqueCode();
+    const createdAt = new Date().toISOString();
+    run('INSERT INTO leagues (name, code, owner_id, created_at) VALUES (?, ?, ?, ?)', [name, code, parseInt(ownerId), createdAt]);
+    const id = one('SELECT last_insert_rowid() as id').id;
+    run('INSERT INTO league_members (league_id, user_id, joined_at) VALUES (?, ?, ?)', [id, parseInt(ownerId), createdAt]);
+    save();
+    return { id, name, code, owner_id: parseInt(ownerId), created_at: createdAt };
+  },
+
+  getLeagueById(id) {
+    return one('SELECT * FROM leagues WHERE id = ?', [parseInt(id)]);
+  },
+
+  getLeagueByCode(code) {
+    return one('SELECT * FROM leagues WHERE code = ?', [String(code || '').trim().toUpperCase()]);
+  },
+
+  getLeaguesForUser(userId) {
+    return all(`
+      SELECT l.*,
+        (SELECT COUNT(*) FROM league_members lm2 WHERE lm2.league_id = l.id) as member_count,
+        u.username as owner_name
+      FROM league_members lm
+      JOIN leagues l ON l.id = lm.league_id
+      JOIN users u ON u.id = l.owner_id
+      WHERE lm.user_id = ?
+      ORDER BY l.created_at DESC
+    `, [parseInt(userId)]);
+  },
+
+  getLeagueMembers(leagueId) {
+    return all(`
+      SELECT u.id, u.username, lm.joined_at
+      FROM league_members lm
+      JOIN users u ON u.id = lm.user_id
+      WHERE lm.league_id = ?
+      ORDER BY lm.joined_at ASC
+    `, [parseInt(leagueId)]);
+  },
+
+  isLeagueMember(userId, leagueId) {
+    return !!one('SELECT id FROM league_members WHERE league_id = ? AND user_id = ?', [parseInt(leagueId), parseInt(userId)]);
+  },
+
+  isLeagueOwner(userId, leagueId) {
+    const league = one('SELECT owner_id FROM leagues WHERE id = ?', [parseInt(leagueId)]);
+    return !!league && league.owner_id === parseInt(userId);
+  },
+
+  joinLeague(userId, leagueId) {
+    const exists = one('SELECT id FROM league_members WHERE league_id = ? AND user_id = ?', [parseInt(leagueId), parseInt(userId)]);
+    if (exists) return false;
+    run('INSERT INTO league_members (league_id, user_id, joined_at) VALUES (?, ?, ?)', [parseInt(leagueId), parseInt(userId), new Date().toISOString()]);
+    save();
+    return true;
+  },
+
+  leaveLeague(userId, leagueId) {
+    run('DELETE FROM league_members WHERE league_id = ? AND user_id = ?', [parseInt(leagueId), parseInt(userId)]);
+    save();
+  },
+
+  deleteLeague(leagueId) {
+    const gameIds = all('SELECT id FROM games WHERE league_id = ?', [parseInt(leagueId)]).map(g => g.id);
+    for (const gid of gameIds) {
+      run('DELETE FROM predictions WHERE game_id = ?', [gid]);
+    }
+    run('DELETE FROM games WHERE league_id = ?', [parseInt(leagueId)]);
+    run('DELETE FROM league_members WHERE league_id = ?', [parseInt(leagueId)]);
+    run('DELETE FROM leagues WHERE id = ?', [parseInt(leagueId)]);
+    save();
+  },
+
+  getLeagueGames(leagueId) {
+    return all('SELECT * FROM games WHERE league_id = ?', [parseInt(leagueId)]);
   },
 
   getGame(id) {
     return one('SELECT * FROM games WHERE id = ?', [parseInt(id)]);
   },
 
-  createGame(phase, homeTeam, awayTeam, startTime) {
+  createGame(leagueId, phase, homeTeam, awayTeam, startTime) {
     const createdAt = new Date().toISOString();
-    run('INSERT INTO games (phase, home_team, away_team, start_time, status, created_at) VALUES (?, ?, ?, ?, ?, ?)', [phase, homeTeam, awayTeam, startTime, 'scheduled', createdAt]);
+    run('INSERT INTO games (league_id, phase, home_team, away_team, start_time, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [parseInt(leagueId), phase, homeTeam, awayTeam, startTime, 'scheduled', createdAt]);
     const id = one('SELECT last_insert_rowid() as id').id;
     save();
-    return { id, phase, home_team: homeTeam, away_team: awayTeam, start_time: startTime, home_score: null, away_score: null, status: 'scheduled', created_at: createdAt };
+    return { id, league_id: parseInt(leagueId), phase, home_team: homeTeam, away_team: awayTeam, start_time: startTime, home_score: null, away_score: null, status: 'scheduled', created_at: createdAt };
   },
 
   updateGameResult(id, homeScore, awayScore) {
@@ -166,18 +281,21 @@ const dbInterface = {
     return one('SELECT * FROM predictions WHERE id = ?', [parseInt(id)]);
   },
 
-  getRankings() {
+  getLeagueRankings(leagueId) {
     const rows = all(`
       SELECT
         u.id, u.username,
         COALESCE(SUM(p.points), 0) as total_points,
         COUNT(CASE WHEN p.points IS NOT NULL THEN 1 END) as predictions_scored,
         COUNT(p.id) as total_predictions
-      FROM users u
-      LEFT JOIN predictions p ON u.id = p.user_id
+      FROM league_members lm
+      JOIN users u ON u.id = lm.user_id
+      LEFT JOIN predictions p ON p.user_id = lm.user_id
+        AND p.game_id IN (SELECT id FROM games WHERE league_id = ?)
+      WHERE lm.league_id = ?
       GROUP BY u.id
       ORDER BY total_points DESC, u.username ASC
-    `);
+    `, [parseInt(leagueId), parseInt(leagueId)]);
     return rows.map(r => ({
       ...r,
       total_points: Number(r.total_points),

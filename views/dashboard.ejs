@@ -9,22 +9,26 @@
 <body>
   <nav class="navbar">
     <div class="nav-inner">
-      <a href="/" class="nav-brand">Guess the Score</a>
+      <a href="/leagues" class="nav-brand">Guess the Score</a>
       <div class="nav-links">
-        <a href="/" class="<%= path === '/' ? 'active' : '' %>">Games</a>
-        <a href="/rankings" class="<%= path === '/rankings' ? 'active' : '' %>">Rankings</a>
-        <% if (user.role === 'admin') { %>
-          <a href="/admin" class="<%= path.startsWith('/admin') ? 'active' : '' %>">Admin</a>
+        <a href="/leagues" class="<%= path === '/leagues' ? 'active' : '' %>">My Leagues</a>
+        <a href="/leagues/<%= league.id %>/games" class="<%= path.includes('/games') ? 'active' : '' %>">Games</a>
+        <a href="/leagues/<%= league.id %>/rankings" class="<%= path.includes('/rankings') ? 'active' : '' %>">Rankings</a>
+        <% if (league.owner_id === user.id) { %>
+          <a href="/leagues/<%= league.id %>/admin" class="<%= path.includes('/admin') ? 'active' : '' %>">Manage</a>
         <% } %>
         <span class="username"><%= user.username %></span>
-        <a href="/logout" class="logout-link">Logout</a>
+        <form method="POST" action="/logout" class="logout-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit">Logout</button>
+        </form>
       </div>
     </div>
   </nav>
 
   <div class="container">
     <section>
-      <h2>Upcoming Games</h2>
+      <h2>Upcoming Games - <%= league.name %></h2>
       <% if (upcoming.length === 0) { %>
         <div class="empty">No upcoming games. Check back later!</div>
       <% } %>
@@ -41,7 +45,8 @@
             <span class="vs">vs</span>
             <span class="team"><%= game.away_team %></span>
           </div>
-          <form method="POST" action="/predict/<%= game.id %>" class="predict-form">
+          <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/predict" class="predict-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <input type="number" name="home_score" min="0" max="50" required
               value="<%= game.myPrediction ? game.myPrediction.home_score : '' %>"
               placeholder="0">

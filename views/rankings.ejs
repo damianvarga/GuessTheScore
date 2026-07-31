@@ -9,21 +9,25 @@
 <body>
   <nav class="navbar">
     <div class="nav-inner">
-      <a href="/" class="nav-brand">Guess the Score</a>
+      <a href="/leagues" class="nav-brand">Guess the Score</a>
       <div class="nav-links">
-        <a href="/">Games</a>
-        <a href="/rankings" class="active">Rankings</a>
-        <% if (user.role === 'admin') { %>
-          <a href="/admin">Admin</a>
+        <a href="/leagues">My Leagues</a>
+        <a href="/leagues/<%= league.id %>/games">Games</a>
+        <a href="/leagues/<%= league.id %>/rankings" class="active">Rankings</a>
+        <% if (league.owner_id === user.id) { %>
+          <a href="/leagues/<%= league.id %>/admin">Manage</a>
         <% } %>
         <span class="username"><%= user.username %></span>
-        <a href="/logout" class="logout-link">Logout</a>
+        <form method="POST" action="/logout" class="logout-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit">Logout</button>
+        </form>
       </div>
     </div>
   </nav>
 
   <div class="container">
-    <h2>Rankings</h2>
+    <h2>Rankings - <%= league.name %></h2>
     <% if (rankings.length === 0) { %>
       <div class="empty">No players yet.</div>
     <% } else { %>
