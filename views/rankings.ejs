@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - Rankings</title>
   <link rel="stylesheet" href="/style.css">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
 </head>
 <body>
   <nav class="navbar">
@@ -52,6 +53,9 @@
         </tbody>
       </table>
     <% } %>
+    <%- include('partials/ad') %>
   </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
 </body>
 </html>

@@ -1,4 +1,10 @@
 require('dotenv').config();
+
+if (process.env.NODE_ENV === 'production' && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32)) {
+  console.error('SESSION_SECRET must be set to a random string of at least 32 characters in production.');
+  process.exit(1);
+}
+
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -19,7 +25,31 @@ const HTTPS_ENABLED = !!(SSL_CERT_PATH && SSL_KEY_PATH);
 const HTTP_REDIRECT_PORT = HTTPS_ENABLED ? (process.env.HTTP_REDIRECT_PORT || '') : '';
 
 app.disable('x-powered-by');
-app.use(helmet());
+
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  baseUri: ["'self'"],
+  fontSrc: ["'self'", 'https:', 'data:'],
+  formAction: ["'self'"],
+  frameAncestors: ["'self'"],
+  imgSrc: ["'self'", 'data:'],
+  objectSrc: ["'none'"],
+  scriptSrc: ["'self'"],
+  scriptSrcAttr: ["'none'"],
+  styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+  upgradeInsecureRequests: []
+};
+
+if (process.env.ADSENSE_CLIENT) {
+  cspDirectives.scriptSrc.push('https://pagead2.googlesyndication.com');
+  cspDirectives.frameSrc = ["'self'", 'https://googleads.g.doubleclick.net', 'https://tpc.googlesyndication.com'];
+  cspDirectives.imgSrc.push('https://*.google.com', 'https://*.gstatic.com', 'https://*.googlesyndication.com', 'https://*.ggpht.com');
+  cspDirectives.connectSrc = ["'self'", 'https://pagead2.googlesyndication.com'];
+}
+
+app.use(helmet({
+  contentSecurityPolicy: { directives: cspDirectives }
+}));
 
 if (process.env.TRUST_PROXY) {
   app.set('trust proxy', parseInt(process.env.TRUST_PROXY, 10) || 1);
@@ -110,6 +140,10 @@ app.use((req, res, next) => {
     res.locals.user = user;
   }
   res.locals.path = req.path;
+  res.locals.adsense = process.env.ADSENSE_CLIENT ? {
+    client: process.env.ADSENSE_CLIENT,
+    slot: process.env.ADSENSE_AD_SLOT || ''
+  } : null;
   next();
 });
 
@@ -134,15 +168,18 @@ app.get('/login', (req, res) => {
   res.render('login', { error: null });
 });
 
-app.post('/login', authLimiter, verifyCsrf, (req, res) => {
+app.post('/login', authLimiter, verifyCsrf, (req, res, next) => {
   const { username, password } = req.body;
   const user = db.getUserByUsername(username);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.render('login', { error: 'Invalid username or password' });
   }
-  req.session.userId = user.id;
-  req.session.role = user.role;
-  res.redirect('/leagues');
+  req.session.regenerate(err => {
+    if (err) return next(err);
+    req.session.userId = user.id;
+    req.session.role = user.role;
+    res.redirect('/leagues');
+  });
 });
 
 app.get('/register', (req, res) => {
@@ -151,9 +188,13 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', authLimiter, verifyCsrf, (req, res) => {
-  const { username, password, confirmPassword } = req.body;
+  const username = (req.body.username || '').trim();
+  const { password, confirmPassword } = req.body;
   if (!username || !password) {
     return res.render('register', { error: 'All fields are required' });
+  }
+  if (username.length < 3 || username.length > 30) {
+    return res.render('register', { error: 'Username must be between 3 and 30 characters' });
   }
   if (password !== confirmPassword) {
     return res.render('register', { error: 'Passwords do not match' });
@@ -174,7 +215,6 @@ app.post('/register', authLimiter, verifyCsrf, (req, res) => {
   db.createUser(username, hash, 'player');
   res.redirect('/login');
 });
-
 app.post('/logout', verifyCsrf, (req, res) => {
   req.session.destroy();
   res.redirect('/login');
@@ -184,18 +224,29 @@ app.get('/', requireAuth, (req, res) => {
   res.redirect('/leagues');
 });
 
+app.get('/privacy', (req, res) => {
+  res.render('privacy');
+});
+
+app.get('/about', (req, res) => {
+  res.render('about');
+});
+
 app.get('/leagues', requireAuth, (req, res) => {
   const leagues = db.getLeaguesForUser(req.session.userId);
   res.render('leagues', { leagues, error: null });
 });
 
 app.post('/leagues', requireAuth, verifyCsrf, (req, res) => {
-  const { name } = req.body;
-  if (!name || !name.trim()) {
-    const leagues = db.getLeaguesForUser(req.session.userId);
+  const name = (req.body.name || '').trim();
+  const leagues = db.getLeaguesForUser(req.session.userId);
+  if (!name) {
     return res.render('leagues', { leagues, error: 'League name is required' });
   }
-  const league = db.createLeague(req.session.userId, name.trim());
+  if (name.length > 60) {
+    return res.render('leagues', { leagues, error: 'League name must be 60 characters or fewer' });
+  }
+  const league = db.createLeague(req.session.userId, name);
   res.redirect(`/leagues/${league.id}`);
 });
 
@@ -237,13 +288,20 @@ app.get('/leagues/:leagueId/admin', requireAuth, loadLeague, requireLeagueOwner,
 });
 
 app.post('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
-  const { phase, home_team, away_team, start_time } = req.body;
+  const phase = (req.body.phase || '').trim();
+  const home_team = (req.body.home_team || '').trim();
+  const away_team = (req.body.away_team || '').trim();
+  const start_time = (req.body.start_time || '').trim();
 
   const errors = [];
   if (!phase) errors.push('Phase is required');
+  if (!Object.prototype.hasOwnProperty.call(PHASE_POINTS, phase)) errors.push('Invalid phase');
   if (!home_team) errors.push('Home team is required');
+  else if (home_team.length > 40) errors.push('Home team must be 40 characters or fewer');
   if (!away_team) errors.push('Away team is required');
+  else if (away_team.length > 40) errors.push('Away team must be 40 characters or fewer');
   if (!start_time) errors.push('Start time is required');
+  else if (Number.isNaN(new Date(start_time).getTime())) errors.push('Start time must be a valid date');
 
   if (errors.length > 0) {
     const games = db.getLeagueGames(req.params.leagueId).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
@@ -290,11 +348,11 @@ app.post('/leagues/:leagueId/games/:gameId/result', requireAuth, loadLeague, req
   const { gameId } = req.params;
   const { home_score, away_score } = req.body;
 
-  const home = parseInt(home_score);
-  const away = parseInt(away_score);
-  if (isNaN(home) || isNaN(away) || home < 0 || away < 0 || home > 99 || away > 99) {
+  if (!/^\d{1,5}$/.test(String(home_score)) || !/^\d{1,5}$/.test(String(away_score))) {
     return res.status(400).send('Invalid scores');
   }
+  const home = parseInt(home_score);
+  const away = parseInt(away_score);
 
   const game = db.getGame(gameId);
   if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
@@ -330,11 +388,11 @@ app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, re
   const now = new Date();
   if (now >= gameStart) return res.status(400).send('Game already started');
 
-  const home = parseInt(home_score);
-  const away = parseInt(away_score);
-  if (isNaN(home) || isNaN(away) || home < 0 || away < 0 || home > 99 || away > 99) {
+  if (!/^\d{1,5}$/.test(String(home_score)) || !/^\d{1,5}$/.test(String(away_score))) {
     return res.status(400).send('Invalid scores');
   }
+  const home = parseInt(home_score);
+  const away = parseInt(away_score);
 
   db.upsertPrediction(gameId, req.session.userId, home, away);
   res.redirect(`/leagues/${req.params.leagueId}/games`);
@@ -343,6 +401,10 @@ app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, re
 app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
   const rankings = db.getLeagueRankings(req.params.leagueId);
   res.render('rankings', { rankings });
+});
+
+app.use((req, res) => {
+  res.status(404).send('Not found');
 });
 
 app.use((err, req, res, next) => {

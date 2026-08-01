@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - My Leagues</title>
   <link rel="stylesheet" href="/style.css">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
 </head>
 <body>
   <nav class="navbar">
@@ -64,5 +65,7 @@
       <button type="submit">Join League</button>
     </form>
   </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
 </body>
 </html>

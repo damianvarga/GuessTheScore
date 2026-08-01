@@ -77,6 +77,18 @@ npm run dev
 | `PUBLIC_HTTPS_HOST` | No | request Host | Public hostname used by the HTTP→HTTPS redirect (set when behind a proxy/domain) |
 | `PUBLIC_HTTPS_PORT` | No | HTTPS `PORT` | Public HTTPS port used by the HTTP→HTTPS redirect (defaults to `443`, so omitted) |
 | `TRUST_PROXY` | No | — | Number of reverse proxy hops to trust (e.g. `1` behind nginx). Enables correct `req.secure` / client IPs |
+| `DB_BACKUP_INTERVAL_MINUTES` | No | `60` | How often `data.db` is snapshotted into `backups/` (set `0` to disable) |
+| `DB_BACKUP_KEEP` | No | `24` | How many backup files to keep; oldest are pruned |
+| `ADSENSE_CLIENT` | No | — | Google AdSense publisher ID (`ca-pub-...`). When set, ad units and the GDPR cookie-consent banner are enabled and the CSP is relaxed for AdSense domains |
+| `ADSENSE_AD_SLOT` | No | — | Google AdSense ad-unit slot ID for the in-content ad units |
+
+### Advertising & cookie consent
+
+When `ADSENSE_CLIENT` is set, the app shows responsive in-content ad units on the games, league, and rankings pages, and a GDPR cookie-consent banner (Accept/Decline) on every page for EEA visitors. Consent is stored in a `gs_consent` cookie; ads load only after the user accepts, and decline keeps the site ad-free. A verification `<meta name="google-adsense-account">` tag is added to all pages. Without `ADSENSE_CLIENT`, no ad code, banner, or CSP changes are applied.
+
+### Backups
+
+The app snapshots `data.db` into `backups/data-<timestamp>.db` every hour (configurable via `DB_BACKUP_INTERVAL_MINUTES`), including one shortly after startup. Old backups are pruned to the newest `DB_BACKUP_KEEP` (default 24). The `backups/` directory is gitignored — copy it (or use your own cron job) to durable storage.
 
 ### HTTPS
 

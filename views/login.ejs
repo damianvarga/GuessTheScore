@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - Login</title>
   <link rel="stylesheet" href="/style.css">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
 </head>
 <body>
   <div class="auth-container">
@@ -14,12 +15,14 @@
       <% if (error) { %><div class="error"><%= error %></div><% } %>
       <form method="POST" action="/login">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <input type="text" name="username" placeholder="Username" required autocomplete="username">
+        <input type="text" name="username" placeholder="Username" required autocomplete="username" maxlength="30">
         <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
         <button type="submit">Sign In</button>
       </form>
       <p class="auth-link">Don't have an account? <a href="/register">Register</a></p>
     </div>
   </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
 </body>
 </html>

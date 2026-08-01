@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - Games</title>
   <link rel="stylesheet" href="/style.css">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
 </head>
 <body>
   <nav class="navbar">
@@ -47,11 +48,11 @@
           </div>
           <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/predict" class="predict-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <input type="number" name="home_score" min="0" max="50" required
+            <input type="text" name="home_score" inputmode="numeric" pattern="[0-9]{1,5}" maxlength="5" data-digits data-maxlen="5" required
               value="<%= game.myPrediction ? game.myPrediction.home_score : '' %>"
               placeholder="0">
             <span style="color:var(--text-muted);font-weight:600;">-</span>
-            <input type="number" name="away_score" min="0" max="50" required
+            <input type="text" name="away_score" inputmode="numeric" pattern="[0-9]{1,5}" maxlength="5" data-digits data-maxlen="5" required
               value="<%= game.myPrediction ? game.myPrediction.away_score : '' %>"
               placeholder="0">
             <button type="submit"><%= game.myPrediction ? 'Update' : 'Submit' %> Prediction</button>
@@ -134,6 +135,10 @@
         </div>
       <% }) %>
     </section>
+    <%- include('partials/ad') %>
   </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
+  <script src="/inputs.js"></script>
 </body>
 </html>

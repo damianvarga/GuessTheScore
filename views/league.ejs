@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - <%= league.name %></title>
   <link rel="stylesheet" href="/style.css">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
 </head>
 <body>
   <nav class="navbar">
@@ -39,12 +40,12 @@
       <a href="/leagues/<%= league.id %>/rankings" class="btn">Rankings</a>
       <% if (league.owner_id === user.id) { %>
         <a href="/leagues/<%= league.id %>/admin" class="btn">Manage Games</a>
-        <form method="POST" action="/leagues/<%= league.id %>/delete" style="display:inline" onsubmit="return confirm('Delete this league and all its games and predictions?')">
+        <form method="POST" action="/leagues/<%= league.id %>/delete" style="display:inline" data-confirm="Delete this league and all its games and predictions?">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button type="submit" class="btn-delete">Delete League</button>
         </form>
       <% } else { %>
-        <form method="POST" action="/leagues/<%= league.id %>/leave" style="display:inline" onsubmit="return confirm('Leave this league?')">
+        <form method="POST" action="/leagues/<%= league.id %>/leave" style="display:inline" data-confirm="Leave this league?">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button type="submit" class="btn-delete">Leave League</button>
         </form>
@@ -75,6 +76,10 @@
         </tbody>
       </table>
     <% } %>
+    <%- include('partials/ad') %>
   </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
+  <script src="/confirm.js"></script>
 </body>
 </html>

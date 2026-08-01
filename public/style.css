@@ -663,6 +663,40 @@ section h2 {
 
 .league-actions .btn-delete { font-size: 0.9rem; padding: 0.5rem 1rem; }
 
+.consent-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding: 1rem 1.5rem;
+  font-size: 0.9rem;
+}
+
+.consent-banner p { margin: 0; }
+.consent-banner a { color: var(--accent); }
+
+.consent-actions { display: flex; gap: 0.5rem; }
+
+.site-footer {
+  margin-top: 2rem;
+  padding: 1rem 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.site-footer a { color: var(--text-muted); }
+.site-footer a:hover { color: var(--accent); }
+
 @media (max-width: 768px) {
   .nav-inner { flex-direction: column; gap: 0.5rem; }
   .nav-links { justify-content: center; }

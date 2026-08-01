@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
 const DB_PATH = path.join(__dirname, 'data.db');
+const BACKUP_DIR = path.join(__dirname, 'backups');
 
 const LEAGUE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -48,6 +49,9 @@ function generateUniqueCode() {
 }
 
 const ready = initSqlJs().then(SQL => {
+  if (fs.existsSync(DB_PATH + '.tmp')) {
+    fs.unlinkSync(DB_PATH + '.tmp');
+  }
   if (fs.existsSync(DB_PATH)) {
     const buffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(buffer);
@@ -121,15 +125,66 @@ const ready = initSqlJs().then(SQL => {
   if (!gameColumns.some(c => c.name === 'league_id')) {
     exec('ALTER TABLE games ADD COLUMN league_id INTEGER');
   }
+}).then(() => {
+  startBackupInterval();
 });
 
 function save() {
   const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+  const tmpPath = DB_PATH + '.tmp';
+  fs.writeFileSync(tmpPath, Buffer.from(data));
+  fs.renameSync(tmpPath, DB_PATH);
+}
+
+function createBackup() {
+  if (!fs.existsSync(DB_PATH)) return null;
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace('Z', '').slice(0, 19);
+  const tmpPath = path.join(BACKUP_DIR, `data-${stamp}.db.tmp`);
+  const backupPath = path.join(BACKUP_DIR, `data-${stamp}.db`);
+  fs.copyFileSync(DB_PATH, tmpPath);
+  fs.renameSync(tmpPath, backupPath);
+  pruneBackups();
+  return backupPath;
+}
+
+function pruneBackups() {
+  const keep = parseInt(process.env.DB_BACKUP_KEEP, 10) || 24;
+  let files;
+  try {
+    files = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db'));
+  } catch (e) {
+    return;
+  }
+  files.sort().reverse();
+  for (const f of files.slice(keep)) {
+    fs.unlinkSync(path.join(BACKUP_DIR, f));
+  }
+}
+
+function startBackupInterval() {
+  const minutes = parseInt(process.env.DB_BACKUP_INTERVAL_MINUTES, 10);
+  const intervalMin = Number.isNaN(minutes) ? 60 : minutes;
+  if (intervalMin <= 0) return;
+  setTimeout(() => {
+    try {
+      createBackup();
+    } catch (err) {
+      console.error('Backup failed:', err);
+    }
+  }, 5000);
+  setInterval(() => {
+    try {
+      createBackup();
+    } catch (err) {
+      console.error('Backup failed:', err);
+    }
+  }, intervalMin * 60 * 1000);
 }
 
 const dbInterface = {
   ready,
+  createBackup,
 
   getUserByUsername(username) {
     return one('SELECT * FROM users WHERE username = ?', [username]);

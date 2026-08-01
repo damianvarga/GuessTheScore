@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - Admin</title>
   <link rel="stylesheet" href="/style.css">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
 </head>
 <body>
   <nav class="navbar">
@@ -42,11 +43,11 @@
       </div>
       <div>
         <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.3rem;">Home Team</label>
-        <input type="text" name="home_team" placeholder="e.g. Brazil" required>
+        <input type="text" name="home_team" placeholder="e.g. Brazil" required maxlength="40">
       </div>
       <div>
         <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.3rem;">Away Team</label>
-        <input type="text" name="away_team" placeholder="e.g. Argentina" required>
+        <input type="text" name="away_team" placeholder="e.g. Argentina" required maxlength="40">
       </div>
       <div>
         <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.3rem;">Start Time</label>
@@ -67,7 +68,7 @@
             <th>Away Team</th>
             <th>Start Time</th>
             <th>Status</th>
-            <th>Result</th>
+            <th>Correct Result</th>
             <th></th>
           </tr>
         </thead>
@@ -82,14 +83,14 @@
               <td>
                 <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/result" class="result-form">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <input type="number" name="home_score" min="0" max="50" placeholder="H" value="<%= game.home_score !== null ? game.home_score : '' %>" required>
+                  <input type="text" name="home_score" inputmode="numeric" pattern="[0-9]{1,5}" maxlength="5" data-digits data-maxlen="5" placeholder="H" value="<%= game.home_score !== null ? game.home_score : '' %>" required>
                   <span style="color:var(--text-muted);">-</span>
-                  <input type="number" name="away_score" min="0" max="50" placeholder="A" value="<%= game.away_score !== null ? game.away_score : '' %>" required>
+                  <input type="text" name="away_score" inputmode="numeric" pattern="[0-9]{1,5}" maxlength="5" data-digits data-maxlen="5" placeholder="A" value="<%= game.away_score !== null ? game.away_score : '' %>" required>
                   <button type="submit"><%= game.status === 'finished' ? 'Update' : 'Set' %></button>
                 </form>
               </td>
               <td>
-                <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/delete" onsubmit="return confirm('Delete this game and all associated predictions?')">
+                <form method="POST" action="/leagues/<%= league.id %>/games/<%= game.id %>/delete" data-confirm="Delete this game and all associated predictions?">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                   <button type="submit" class="btn-delete">Delete</button>
                 </form>
@@ -100,5 +101,9 @@
       </table>
     <% } %>
   </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
+  <script src="/confirm.js"></script>
+  <script src="/inputs.js"></script>
 </body>
 </html>
