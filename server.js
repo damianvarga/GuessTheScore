@@ -404,13 +404,13 @@ app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMem
 });
 
 app.use((req, res) => {
-  res.status(404).send('Not found');
+  res.status(404).render('404', {});
 });
 
 app.use((err, req, res, next) => {
   console.error(err);
   if (res.headersSent) return next(err);
-  res.status(500).send('Internal server error');
+  res.status(500).render('500', {});
 });
 
 db.ready.then(() => {

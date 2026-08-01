@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the Score - Error</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1 style="font-size:3.5rem;margin-bottom:0;">500</h1>
+      <p class="subtitle">Something went wrong</p>
+      <p>An unexpected error occurred. Please try again in a moment.</p>
+      <p><a class="btn" href="/">Back to Home</a></p>
+    </div>
+  </div>
+  <%- include('partials/footer') %>
+  <%- include('partials/consent-banner') %>
+</body>
+</html>
