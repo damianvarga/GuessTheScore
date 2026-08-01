@@ -79,6 +79,7 @@ npm run dev
 | `TRUST_PROXY` | No | — | Number of reverse proxy hops to trust (e.g. `1` behind nginx). Enables correct `req.secure` / client IPs |
 | `DB_BACKUP_INTERVAL_MINUTES` | No | `60` | How often `data.db` is snapshotted into `backups/` (set `0` to disable) |
 | `DB_BACKUP_KEEP` | No | `24` | How many backup files to keep; oldest are pruned |
+| `DB_PATH` | No | `data.db` | Path to the SQLite database file (used by tests to run against a throwaway database) |
 | `ADSENSE_CLIENT` | No | — | Google AdSense publisher ID (`ca-pub-...`). When set, ad units and the GDPR cookie-consent banner are enabled and the CSP is relaxed for AdSense domains |
 | `ADSENSE_AD_SLOT` | No | — | Google AdSense ad-unit slot ID for the in-content ad units |
 
@@ -89,6 +90,16 @@ When `ADSENSE_CLIENT` is set, the app shows responsive in-content ad units on th
 ### Backups
 
 The app snapshots `data.db` into `backups/data-<timestamp>.db` every hour (configurable via `DB_BACKUP_INTERVAL_MINUTES`), including one shortly after startup. Old backups are pruned to the newest `DB_BACKUP_KEEP` (default 24). The `backups/` directory is gitignored — copy it (or use your own cron job) to durable storage.
+
+### Testing
+
+Run the automated integration suite with:
+
+```bash
+npm test
+```
+
+`test/run.js` boots the server twice against a throwaway database in your OS temp directory (via the `DB_PATH` override — your real `data.db` is never touched): once with ads disabled and once with `ADSENSE_CLIENT` set, then runs the self-seeding suites (`league`, `confirm`, `adsense-off`, `adsense-on`) against each. Backups are disabled during tests. The `_test-500` route used by the suite is registered only when `NODE_ENV=test`. If port 3100 is busy, set `TEST_PORT` to override it.
 
 ### HTTPS
 

@@ -403,6 +403,12 @@ app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMem
   res.render('rankings', { rankings });
 });
 
+if (process.env.NODE_ENV === 'test') {
+  app.get('/_test-500', () => {
+    throw new Error('test');
+  });
+}
+
 app.use((req, res) => {
   res.status(404).render('404', {});
 });

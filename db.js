@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
-const DB_PATH = path.join(__dirname, 'data.db');
+const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(__dirname, 'data.db');
 const BACKUP_DIR = path.join(__dirname, 'backups');
 
 const LEAGUE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
