@@ -661,6 +661,18 @@ section h2 {
 
 .btn:hover { opacity: 0.85; }
 
+.rankings-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.rankings-header h2 { margin: 0; }
+
+.share-btn { white-space: nowrap; }
+
 .league-actions .btn-delete { font-size: 0.9rem; padding: 0.5rem 1rem; }
 
 .consent-banner {

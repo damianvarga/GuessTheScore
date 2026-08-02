@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guess the Score - Rankings</title>
+  <meta property="og:title" content="<%= league.name %> rankings on Guess the Score">
+  <meta property="og:description" content="See who's leading the <%= league.name %> prediction pool. Guess the score, climb the board, beat your friends.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="<%= pageUrl %>">
+  <meta property="og:image" content="<%= siteUrl %>/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <% if (adsense) { %><meta name="google-adsense-account" content="<%= adsense.client %>"><% } %>
@@ -29,7 +37,13 @@
   </nav>
 
   <div class="container">
-    <h2>Rankings - <%= league.name %></h2>
+    <div class="rankings-header">
+      <h2>Rankings - <%= league.name %></h2>
+      <button type="button" class="btn share-btn" data-share
+        data-share-title="Guess the Score"
+        data-share-text="I'm on the <%= league.name %> rankings board in Guess the Score. Can you beat me?"
+        data-share-url="<%= pageUrl %>">Share</button>
+    </div>
     <% if (rankings.length === 0) { %>
       <div class="empty">No players yet.</div>
     <% } else { %>
@@ -58,5 +72,6 @@
   </div>
   <%- include('partials/footer') %>
   <%- include('partials/consent-banner') %>
+  <script src="/share.js"></script>
 </body>
 </html>

@@ -400,7 +400,8 @@ app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, re
 
 app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
   const rankings = db.getLeagueRankings(req.params.leagueId);
-  res.render('rankings', { rankings });
+  const siteUrl = `${req.protocol}://${req.get('host')}`;
+  res.render('rankings', { rankings, pageUrl: siteUrl + req.originalUrl, siteUrl });
 });
 
 if (process.env.NODE_ENV === 'test') {
