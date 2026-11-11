@@ -4,3 +4,6 @@ data.db
 backups/
 .qodo/
 .env
+
+.vercel
+.env*
