@@ -170,15 +170,31 @@ function startBackupInterval() {
   }, intervalMin * 60 * 1000);
 }
 
-const ready = (async () => {
+async function initDatabase() {
   if (TURSO_URL) {
+    const started = Date.now();
+    const host = (() => { try { return new URL(TURSO_URL).host; } catch { return '(invalid url)'; } })();
     const { createClient } = require('@libsql/client');
     client = createClient({
       url: TURSO_URL,
       authToken: process.env.TURSO_AUTH_TOKEN || undefined
     });
-    await exec(SCHEMA);
-    await migrate();
+    try {
+      await exec(SCHEMA);
+      await migrate();
+    } catch (err) {
+      client = null;
+      console.error(`[db-init] Turso init failed for ${host} in ${Date.now() - started}ms:`, err && err.message);
+      const cause = err && err.cause;
+      if (cause) {
+        console.error('[db-init] cause:', cause.message, { code: cause.code, syscall: cause.syscall, address: cause.address, port: cause.port });
+        if (Array.isArray(cause.errors)) {
+          console.error('[db-init] cause.errors:', cause.errors.map(e => ({ code: e.code, syscall: e.syscall, address: e.address })));
+        }
+      }
+      throw err;
+    }
+    console.log(`[db-init] Turso ready in ${Date.now() - started}ms (${host})`);
     return;
   }
 
@@ -195,14 +211,24 @@ const ready = (async () => {
   await exec(SCHEMA);
   await migrate();
   startBackupInterval();
-})();
+}
 
-// Mark the promise as handled so an early rejection cannot crash the process
-// (e.g. on Vercel before the first request). Consumers still observe the rejection.
-ready.catch(() => {});
+let readyPromise = null;
+
+// Returns the shared init promise. If init fails, the cached rejection is
+// cleared so the next request retries instead of failing forever.
+function ensureReady() {
+  if (!readyPromise) {
+    readyPromise = initDatabase().catch(err => {
+      readyPromise = null;
+      throw err;
+    });
+  }
+  return readyPromise;
+}
 
 const dbInterface = {
-  ready,
+  ensureReady,
   createBackup,
 
   async getUserByUsername(username) {

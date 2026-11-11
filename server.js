@@ -71,7 +71,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use((req, res, next) => {
-  db.ready.then(() => next(), next);
+  db.ensureReady().then(() => next(), next);
 });
 
 app.use(cookieSession({
@@ -417,11 +417,14 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error(err);
   if (res.headersSent) return next(err);
+  res.locals.adsense = res.locals.adsense ?? null;
+  res.locals.user = res.locals.user ?? null;
+  res.locals.path = res.locals.path ?? req.path;
   res.status(500).render('500', {});
 });
 
 async function start() {
-  await db.ready;
+  await db.ensureReady();
   if (HTTPS_ENABLED) {
     const sslOptions = {
       cert: fs.readFileSync(SSL_CERT_PATH),
