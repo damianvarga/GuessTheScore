@@ -77,9 +77,11 @@ npm run dev
 | `PUBLIC_HTTPS_HOST` | No | request Host | Public hostname used by the HTTP→HTTPS redirect (set when behind a proxy/domain) |
 | `PUBLIC_HTTPS_PORT` | No | HTTPS `PORT` | Public HTTPS port used by the HTTP→HTTPS redirect (defaults to `443`, so omitted) |
 | `TRUST_PROXY` | No | — | Number of reverse proxy hops to trust (e.g. `1` behind nginx). Enables correct `req.secure` / client IPs |
-| `DB_BACKUP_INTERVAL_MINUTES` | No | `60` | How often `data.db` is snapshotted into `backups/` (set `0` to disable) |
-| `DB_BACKUP_KEEP` | No | `24` | How many backup files to keep; oldest are pruned |
-| `DB_PATH` | No | `data.db` | Path to the SQLite database file (used by tests to run against a throwaway database) |
+| `TURSO_DATABASE_URL` | Prod | — | Turso (libSQL) database URL. When set, the app uses Turso instead of the local `data.db` file and file backups are disabled |
+| `TURSO_AUTH_TOKEN` | Prod | — | Turso auth token for `TURSO_DATABASE_URL` |
+| `DB_BACKUP_INTERVAL_MINUTES` | No | `60` | Local mode only: how often `data.db` is snapshotted into `backups/` (set `0` to disable) |
+| `DB_BACKUP_KEEP` | No | `24` | Local mode only: how many backup files to keep; oldest are pruned |
+| `DB_PATH` | No | `data.db` | Local mode only: path to the SQLite database file (used by tests to run against a throwaway database) |
 | `ADSENSE_CLIENT` | No | — | Google AdSense publisher ID (`ca-pub-...`). When set, ad units and the GDPR cookie-consent banner are enabled and the CSP is relaxed for AdSense domains |
 | `ADSENSE_AD_SLOT` | No | — | Google AdSense ad-unit slot ID for the in-content ad units |
 
@@ -89,7 +91,7 @@ When `ADSENSE_CLIENT` is set, the app shows responsive in-content ad units on th
 
 ### Backups
 
-The app snapshots `data.db` into `backups/data-<timestamp>.db` every hour (configurable via `DB_BACKUP_INTERVAL_MINUTES`), including one shortly after startup. Old backups are pruned to the newest `DB_BACKUP_KEEP` (default 24). The `backups/` directory is gitignored — copy it (or use your own cron job) to durable storage.
+In local file mode (no `TURSO_DATABASE_URL`), the app snapshots `data.db` into `backups/data-<timestamp>.db` every hour (configurable via `DB_BACKUP_INTERVAL_MINUTES`), including one shortly after startup. Old backups are pruned to the newest `DB_BACKUP_KEEP` (default 24). The `backups/` directory is gitignored — copy it (or use your own cron job) to durable storage. With Turso configured, data lives in Turso and file backups are skipped.
 
 ### Testing
 
@@ -154,7 +156,7 @@ The old global admin panel was removed. There is no global admin user or role �
 ## Security
 
 - **Secrets** — the session secret comes from `SESSION_SECRET` in the environment (never hard-coded).
-- **HTTPS** — session cookies are marked `Secure` automatically when the request arrives over HTTPS (`secure: 'auto'`), including through a trusted reverse proxy.
+- **HTTPS** — session cookies are marked `Secure` automatically when the request arrives over HTTPS (detected from `req.protocol`, including through a trusted reverse proxy with `TRUST_PROXY`).
 - **CSRF** — all mutating routes require a per-session CSRF token (`_csrf` hidden field), included on every form. Logout is a `POST` to prevent logout-CSRF.
 - **Rate limiting** — `/login` and `/register` are limited to 20 attempts per 15 minutes per IP.
 - **Password policy** — passwords must be at least 8 characters and include uppercase, lowercase, and a number.
@@ -172,5 +174,5 @@ The old global admin panel was removed. There is no global admin user or role �
 
 - **Backend:** Node.js, Express
 - **Templating:** EJS
-- **Auth:** express-session, bcryptjs
-- **Database:** SQLite (via `sql.js`) — stored in `data.db`
+- **Auth:** cookie-session, bcryptjs
+- **Database:** Turso (libSQL) in production via `TURSO_DATABASE_URL`; SQLite via `sql.js` in local development/tests — stored in `data.db`

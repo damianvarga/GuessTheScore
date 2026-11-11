@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('express-async-errors');
 
 if (process.env.NODE_ENV === 'production' && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32)) {
   console.error('SESSION_SECRET must be set to a random string of at least 32 characters in production.');
@@ -6,7 +7,7 @@ if (process.env.NODE_ENV === 'production' && (!process.env.SESSION_SECRET || pro
 }
 
 const express = require('express');
-const session = require('express-session');
+const cookieSession = require('cookie-session');
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
@@ -68,16 +69,17 @@ app.set('view engine', 'ejs');
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret-do-not-use-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    maxAge: 24 * 60 * 60 * 1000,
-    httpOnly: true,
-    secure: 'auto',
-    sameSite: 'lax'
-  }
+
+app.use((req, res, next) => {
+  db.ready.then(() => next(), next);
+});
+
+app.use(cookieSession({
+  name: 'gs.session',
+  keys: [process.env.SESSION_SECRET || 'dev-secret-do-not-use-in-production'],
+  maxAge: 24 * 60 * 60 * 1000,
+  httpOnly: true,
+  sameSite: 'lax'
 }));
 
 const tokens = new csrf();
@@ -111,33 +113,32 @@ function requireAuth(req, res, next) {
   next();
 }
 
-function loadLeague(req, res, next) {
-  const league = db.getLeagueById(req.params.leagueId);
+async function loadLeague(req, res, next) {
+  const league = await db.getLeagueById(req.params.leagueId);
   if (!league) return res.status(404).send('League not found');
   res.locals.league = league;
   req.league = league;
   next();
 }
 
-function requireLeagueMember(req, res, next) {
-  if (!db.isLeagueMember(req.session.userId, req.params.leagueId)) {
+async function requireLeagueMember(req, res, next) {
+  if (!(await db.isLeagueMember(req.session.userId, req.params.leagueId))) {
     return res.redirect('/leagues');
   }
   next();
 }
 
-function requireLeagueOwner(req, res, next) {
-  if (!db.isLeagueOwner(req.session.userId, req.params.leagueId)) {
+async function requireLeagueOwner(req, res, next) {
+  if (!(await db.isLeagueOwner(req.session.userId, req.params.leagueId))) {
     return res.status(403).send('Only the league owner can do that');
   }
   next();
 }
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   res.locals.user = null;
   if (req.session.userId) {
-    const user = db.getUserById(req.session.userId);
-    res.locals.user = user;
+    res.locals.user = await db.getUserById(req.session.userId);
   }
   res.locals.path = req.path;
   res.locals.adsense = process.env.ADSENSE_CLIENT ? {
@@ -168,18 +169,16 @@ app.get('/login', (req, res) => {
   res.render('login', { error: null });
 });
 
-app.post('/login', authLimiter, verifyCsrf, (req, res, next) => {
+app.post('/login', authLimiter, verifyCsrf, async (req, res) => {
   const { username, password } = req.body;
-  const user = db.getUserByUsername(username);
+  const user = await db.getUserByUsername(username);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.render('login', { error: 'Invalid username or password' });
   }
-  req.session.regenerate(err => {
-    if (err) return next(err);
-    req.session.userId = user.id;
-    req.session.role = user.role;
-    res.redirect('/leagues');
-  });
+  req.session.userId = user.id;
+  req.session.role = user.role;
+  req.session.csrfSecret = tokens.secretSync();
+  res.redirect('/leagues');
 });
 
 app.get('/register', (req, res) => {
@@ -187,7 +186,7 @@ app.get('/register', (req, res) => {
   res.render('register', { error: null });
 });
 
-app.post('/register', authLimiter, verifyCsrf, (req, res) => {
+app.post('/register', authLimiter, verifyCsrf, async (req, res) => {
   const username = (req.body.username || '').trim();
   const { password, confirmPassword } = req.body;
   if (!username || !password) {
@@ -206,17 +205,18 @@ app.post('/register', authLimiter, verifyCsrf, (req, res) => {
     return res.render('register', { error: 'Password must include uppercase, lowercase, and a number' });
   }
 
-  const existing = db.getUserByUsername(username);
+  const existing = await db.getUserByUsername(username);
   if (existing) {
     return res.render('register', { error: 'Username already taken' });
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  db.createUser(username, hash, 'player');
+  await db.createUser(username, hash, 'player');
   res.redirect('/login');
 });
+
 app.post('/logout', verifyCsrf, (req, res) => {
-  req.session.destroy();
+  req.session = null;
   res.redirect('/login');
 });
 
@@ -232,62 +232,62 @@ app.get('/about', (req, res) => {
   res.render('about');
 });
 
-app.get('/leagues', requireAuth, (req, res) => {
-  const leagues = db.getLeaguesForUser(req.session.userId);
+app.get('/leagues', requireAuth, async (req, res) => {
+  const leagues = await db.getLeaguesForUser(req.session.userId);
   res.render('leagues', { leagues, error: null });
 });
 
-app.post('/leagues', requireAuth, verifyCsrf, (req, res) => {
+app.post('/leagues', requireAuth, verifyCsrf, async (req, res) => {
   const name = (req.body.name || '').trim();
-  const leagues = db.getLeaguesForUser(req.session.userId);
+  const leagues = await db.getLeaguesForUser(req.session.userId);
   if (!name) {
     return res.render('leagues', { leagues, error: 'League name is required' });
   }
   if (name.length > 60) {
     return res.render('leagues', { leagues, error: 'League name must be 60 characters or fewer' });
   }
-  const league = db.createLeague(req.session.userId, name);
+  const league = await db.createLeague(req.session.userId, name);
   res.redirect(`/leagues/${league.id}`);
 });
 
-app.post('/leagues/join', requireAuth, verifyCsrf, (req, res) => {
+app.post('/leagues/join', requireAuth, verifyCsrf, async (req, res) => {
   const { code } = req.body;
-  const leagues = db.getLeaguesForUser(req.session.userId);
-  const league = db.getLeagueByCode(code);
+  const leagues = await db.getLeaguesForUser(req.session.userId);
+  const league = await db.getLeagueByCode(code);
   if (!league) {
     return res.render('leagues', { leagues, error: 'League not found. Check the code and try again.' });
   }
-  if (!db.joinLeague(req.session.userId, league.id)) {
+  if (!(await db.joinLeague(req.session.userId, league.id))) {
     return res.render('leagues', { leagues, error: `You are already a member of ${league.name}` });
   }
   res.redirect(`/leagues/${league.id}`);
 });
 
-app.get('/leagues/:leagueId', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
-  const members = db.getLeagueMembers(req.params.leagueId);
-  const isOwner = db.isLeagueOwner(req.session.userId, req.params.leagueId);
+app.get('/leagues/:leagueId', requireAuth, loadLeague, requireLeagueMember, async (req, res) => {
+  const members = await db.getLeagueMembers(req.params.leagueId);
+  const isOwner = await db.isLeagueOwner(req.session.userId, req.params.leagueId);
   res.render('league', { members, isOwner });
 });
 
-app.post('/leagues/:leagueId/leave', requireAuth, loadLeague, requireLeagueMember, verifyCsrf, (req, res) => {
-  if (db.isLeagueOwner(req.session.userId, req.params.leagueId)) {
+app.post('/leagues/:leagueId/leave', requireAuth, loadLeague, requireLeagueMember, verifyCsrf, async (req, res) => {
+  if (await db.isLeagueOwner(req.session.userId, req.params.leagueId)) {
     return res.status(400).send('The owner cannot leave. Delete the league instead.');
   }
-  db.leaveLeague(req.session.userId, req.params.leagueId);
+  await db.leaveLeague(req.session.userId, req.params.leagueId);
   res.redirect('/leagues');
 });
 
-app.post('/leagues/:leagueId/delete', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
-  db.deleteLeague(req.params.leagueId);
+app.post('/leagues/:leagueId/delete', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, async (req, res) => {
+  await db.deleteLeague(req.params.leagueId);
   res.redirect('/leagues');
 });
 
-app.get('/leagues/:leagueId/admin', requireAuth, loadLeague, requireLeagueOwner, (req, res) => {
-  const games = db.getLeagueGames(req.params.leagueId).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+app.get('/leagues/:leagueId/admin', requireAuth, loadLeague, requireLeagueOwner, async (req, res) => {
+  const games = (await db.getLeagueGames(req.params.leagueId)).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
   res.render('admin', { games, phasePoints: PHASE_POINTS, error: null });
 });
 
-app.post('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+app.post('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, async (req, res) => {
   const phase = (req.body.phase || '').trim();
   const home_team = (req.body.home_team || '').trim();
   const away_team = (req.body.away_team || '').trim();
@@ -304,17 +304,17 @@ app.post('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueOwner
   else if (Number.isNaN(new Date(start_time).getTime())) errors.push('Start time must be a valid date');
 
   if (errors.length > 0) {
-    const games = db.getLeagueGames(req.params.leagueId).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+    const games = (await db.getLeagueGames(req.params.leagueId)).sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
     return res.render('admin', { games, phasePoints: PHASE_POINTS, error: errors.join(', ') });
   }
 
-  db.createGame(req.params.leagueId, phase, home_team, away_team, start_time);
+  await db.createGame(req.params.leagueId, phase, home_team, away_team, start_time);
   res.redirect(`/leagues/${req.params.leagueId}/admin`);
 });
 
-app.get('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
+app.get('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueMember, async (req, res) => {
   const now = new Date();
-  const games = db.getLeagueGames(req.params.leagueId);
+  const games = await db.getLeagueGames(req.params.leagueId);
 
   const upcoming = [];
   const started = [];
@@ -323,10 +323,10 @@ app.get('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueMember
     const gameStart = new Date(game.start_time);
     const isStarted = gameStart <= now || game.status === 'finished';
 
-    const myPrediction = db.getPrediction(game.id, req.session.userId);
+    const myPrediction = await db.getPrediction(game.id, req.session.userId);
     let allPredictions = [];
     if (isStarted) {
-      allPredictions = db.getGamePredictions(game.id);
+      allPredictions = await db.getGamePredictions(game.id);
     }
 
     const gameData = { ...game, myPrediction, allPredictions };
@@ -344,7 +344,7 @@ app.get('/leagues/:leagueId/games', requireAuth, loadLeague, requireLeagueMember
   res.render('dashboard', { upcoming, started, phasePoints: PHASE_POINTS });
 });
 
-app.post('/leagues/:leagueId/games/:gameId/result', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+app.post('/leagues/:leagueId/games/:gameId/result', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, async (req, res) => {
   const { gameId } = req.params;
   const { home_score, away_score } = req.body;
 
@@ -354,33 +354,33 @@ app.post('/leagues/:leagueId/games/:gameId/result', requireAuth, loadLeague, req
   const home = parseInt(home_score);
   const away = parseInt(away_score);
 
-  const game = db.getGame(gameId);
+  const game = await db.getGame(gameId);
   if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
 
-  db.updateGameResult(gameId, home, away);
+  await db.updateGameResult(gameId, home, away);
 
-  const predictions = db.getGamePredictions(gameId);
+  const predictions = await db.getGamePredictions(gameId);
   for (const pred of predictions) {
     const points = calculatePoints(pred.home_score, pred.away_score, home, away, game.phase);
-    db.updatePredictionPoints(pred.id, points);
+    await db.updatePredictionPoints(pred.id, points);
   }
 
   res.redirect(`/leagues/${req.params.leagueId}/admin`);
 });
 
-app.post('/leagues/:leagueId/games/:gameId/delete', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, (req, res) => {
+app.post('/leagues/:leagueId/games/:gameId/delete', requireAuth, loadLeague, requireLeagueOwner, verifyCsrf, async (req, res) => {
   const { gameId } = req.params;
-  const game = db.getGame(gameId);
+  const game = await db.getGame(gameId);
   if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
-  db.deleteGame(gameId);
+  await db.deleteGame(gameId);
   res.redirect(`/leagues/${req.params.leagueId}/admin`);
 });
 
-app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, requireLeagueMember, verifyCsrf, (req, res) => {
+app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, requireLeagueMember, verifyCsrf, async (req, res) => {
   const { gameId } = req.params;
   const { home_score, away_score } = req.body;
 
-  const game = db.getGame(gameId);
+  const game = await db.getGame(gameId);
   if (!game || game.league_id !== parseInt(req.params.leagueId)) return res.status(404).send('Game not found');
   if (game.status === 'finished') return res.status(400).send('Game already finished');
 
@@ -394,12 +394,12 @@ app.post('/leagues/:leagueId/games/:gameId/predict', requireAuth, loadLeague, re
   const home = parseInt(home_score);
   const away = parseInt(away_score);
 
-  db.upsertPrediction(gameId, req.session.userId, home, away);
+  await db.upsertPrediction(gameId, req.session.userId, home, away);
   res.redirect(`/leagues/${req.params.leagueId}/games`);
 });
 
-app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMember, (req, res) => {
-  const rankings = db.getLeagueRankings(req.params.leagueId);
+app.get('/leagues/:leagueId/rankings', requireAuth, loadLeague, requireLeagueMember, async (req, res) => {
+  const rankings = await db.getLeagueRankings(req.params.leagueId);
   const siteUrl = `${req.protocol}://${req.get('host')}`;
   res.render('rankings', { rankings, pageUrl: siteUrl + req.originalUrl, siteUrl });
 });
@@ -420,7 +420,8 @@ app.use((err, req, res, next) => {
   res.status(500).render('500', {});
 });
 
-db.ready.then(() => {
+async function start() {
+  await db.ready;
   if (HTTPS_ENABLED) {
     const sslOptions = {
       cert: fs.readFileSync(SSL_CERT_PATH),
@@ -445,7 +446,13 @@ db.ready.then(() => {
       console.log(`Server running at http://localhost:${PORT}`);
     });
   }
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  start().catch(err => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = app;
